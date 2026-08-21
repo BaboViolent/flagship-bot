@@ -66,12 +66,16 @@ class FlagshipBot {
     };
     this.ws.onclose = () => {
       clearInterval(this.loop);
+      clearInterval(this.heartbeat);
       log({ event: 'disconnected', retryMs: this.reconnectDelay });
       setTimeout(() => this.resetAndConnect(), this.reconnectDelay);
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30_000);
     };
     this.ws.onerror = () => this.ws.close();
     this.loop = setInterval(() => this.tick(), 33);
+    this.heartbeat = setInterval(() => {
+      if (this.id !== null) this.send(pong(this.id));
+    }, 500);
   }
 
   resetAndConnect() {
