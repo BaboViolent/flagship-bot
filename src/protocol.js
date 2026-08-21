@@ -75,12 +75,13 @@ export function coordFrame(playerId, frameId, position, velocity, aim) {
   return frame(NET.COORD_FRAME, payload);
 }
 
-export function shoot(playerId, weapon, from, to) {
+export function shoot(playerId, weapon, from, direction) {
   const payload = new Uint8Array(16);
   const view = new DataView(payload.buffer);
   payload.set([playerId, weapon, 0]);
   for (let i = 0; i < 3; i++) view.setInt16(4 + i * 2, Math.round(from[i] * 100), true);
-  for (let i = 0; i < 3; i++) view.setInt16(10 + i * 2, Math.round(to[i] * 100), true);
+  // Native PLAYER_SHOOT carries a normalized direction, not a world endpoint.
+  for (let i = 0; i < 3; i++) view.setInt16(10 + i * 2, Math.round(direction[i] * 100), true);
   return frame(NET.PLAYER_SHOOT, payload);
 }
 

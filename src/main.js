@@ -221,7 +221,10 @@ class FlagshipBot {
     this.pendingMovement.set(this.frame, next);
     me.position = next;
     if (combatPermission(state, objective, target) && this.grid.sightLineClear(me.position, target.position) && now - this.lastShoot > 125) {
-      this.send(shoot(this.id, 0, me.position, target.position)); this.lastShoot = now;
+      const aimDx = target.position[0] - me.position[0], aimDy = target.position[1] - me.position[1];
+      const aimLength = Math.hypot(aimDx, aimDy) || 1;
+      this.send(shoot(this.id, 0, me.position, [aimDx / aimLength, aimDy / aimLength, 0]));
+      this.lastShoot = now;
     }
     if (this.frame % 300 === 0) {
       const moved = this.snapshotPosition ? distance(me.position, this.snapshotPosition) : 0;
