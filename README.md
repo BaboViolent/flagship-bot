@@ -28,6 +28,7 @@ Configuration:
 | `BV2_SERVER` | `wss://nc-ctf.baboviolent.net/bot/ws` | Clean external bot WebSocket endpoint |
 | `BV2_TEAM` | `0` | `0` for blue or `1` for red |
 | `BV2_PLAYER_NAME` | `^4Flag^1ship` | Independent in-game name; Babo colors and Alt-code glyphs are supported |
+| `BV2_LOG_FILE` | unset | Optional JSONL telemetry file; stdout always receives the same structured events |
 
 Or run the container:
 
@@ -45,5 +46,6 @@ The handshake reports implementation `Flagship`, its version, and author `BaboVi
 - The bot immediately answers pings and reconnects with exponential backoff.
 - Movement runs at about 30 Hz, below the API's advertised 60 Hz allowance.
 - Hitscan requests are still validated for range, timing, and line of sight by the server.
+- Telemetry records map boundaries, objective changes, flag transitions, spawns, periodic K/D and objective snapshots, and final match summaries.
 
 See [the Bot API guide](https://baboviolent.net/bot-api) for the complete wire contract.
