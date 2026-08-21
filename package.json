@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test",
-    "check": "node --check src/main.js && node --check src/protocol.js && node --check src/strategy.js"
+    "check": "node --check src/main.js && node --check src/map.js && node --check src/protocol.js && node --check src/strategy.js"
   },
   "engines": {
     "node": ">=22"

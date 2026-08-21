@@ -4,6 +4,7 @@ import {
 } from './protocol.js';
 import { chooseObjective, chooseTarget, combatPermission, distance } from './strategy.js';
 import { appendFileSync } from 'node:fs';
+import { NavigationGrid } from './map.js';
 
 const logFile = process.env.BV2_LOG_FILE;
 function log(event) {
@@ -43,6 +44,11 @@ class FlagshipBot {
     this.map = null;
     this.lastObjective = null;
     this.spawnCount = 0;
+    this.grid = null;
+    this.navGoal = [Infinity, Infinity];
+    this.waypoint = null;
+    this.waypointUntil = 0;
+    this.authoritativePosition = null;
   }
 
   connect() {
@@ -83,6 +89,10 @@ class FlagshipBot {
       }, 100);
       log({ event: 'authenticated', playerId: this.id, team: this.team });
     } else if (type === NET.PING && this.id !== null) this.send(pong(this.id));
+    else if (type === NET.SERVER_INFO && payload.length >= 20) {
+      const map = new TextDecoder().decode(payload.slice(4, 20)).replace(/\0.*$/s, '');
+      this.loadMap(map);
+    }
     else if (type === NET.PLAYER_ENUM_STATE && payload.length >= 92) {
       const update = parsePlayer(payload), old = this.players.get(update.id) ?? {};
       this.players.set(update.id, { ...old, ...update });
@@ -108,6 +118,7 @@ class FlagshipBot {
     } else if (type === NET.COORD_FRAME) {
       const update = parseCoord(payload), old = this.players.get(update.id) ?? { id: update.id };
       this.players.set(update.id, { ...old, position: update.position });
+      if (update.id === this.id) this.authoritativePosition = update.position;
     } else if (type === NET.FLAG_ENUM && payload.length >= 26) this.flags = parseFlagEnum(payload);
     else if (type === NET.DROP_FLAG && payload.length >= 13) {
       const update = parseFlagDrop(payload); this.flags[update.id] = { state: -1, position: update.position };
@@ -122,10 +133,23 @@ class FlagshipBot {
       const nextMap = new TextDecoder().decode(payload.slice(0, 16)).replace(/\0.*$/s, '');
       if (this.map && this.map !== nextMap) log({ event: 'match-summary', map: this.map, nextMap, stats: this.stats(), spawnCount: this.spawnCount });
       this.map = nextMap;
+      this.loadMap(nextMap);
       this.spawnCount = 0;
       this.flags.forEach((flag) => { flag.state = FLAG_AT_POD; });
       this.players.clear();
       log({ event: 'map-change', map: nextMap });
+    }
+  }
+
+  async loadMap(name) {
+    if (!name || (this.map === name && this.grid)) return;
+    this.map = name; this.grid = null;
+    try {
+      this.grid = await NavigationGrid.load(name);
+      this.navGoal = [Infinity, Infinity]; this.waypoint = null;
+      log({ event: 'map-loaded', map: name, width: this.grid.width, height: this.grid.height });
+    } catch (error) {
+      log({ event: 'map-load-failed', map: name, error: error.message });
     }
   }
 
@@ -149,7 +173,7 @@ class FlagshipBot {
       if (performance.now() - this.lastSpawn > 1000) this.requestSpawn();
       return;
     }
-    if (!me.position) return;
+    if (!me.position || !this.grid) return;
     const now = performance.now();
     const dt = Math.min((now - this.lastTick) / 1000, 0.1); this.lastTick = now;
     const state = this, objective = chooseObjective(state), target = chooseTarget(state);
@@ -159,12 +183,24 @@ class FlagshipBot {
     }
     const goal = objective.goal ?? me.position;
     const goalDistance = distance(me.position, goal);
-    if (goalDistance + 0.08 < this.bestGoalDistance) { this.bestGoalDistance = goalDistance; this.lastProgress = now; }
-    if (now - this.lastProgress > 550) {
-      this.avoidDirection *= -1; this.avoidUntil = now + 850; this.lastProgress = now; this.bestGoalDistance = goalDistance;
+    const resolvedGoal = this.grid.resolve(goal);
+    const goalChanged = distance(resolvedGoal, this.navGoal) > 0.75;
+    const reachedWaypoint = !this.waypoint || distance(me.position, this.waypoint) < 0.30;
+    if (goalChanged || reachedWaypoint || now >= this.waypointUntil) {
+      this.navGoal = resolvedGoal;
+      this.waypoint = this.grid.navigate(me.position, resolvedGoal);
+      this.waypointUntil = now + 750;
     }
-    let angle = Math.atan2(goal[1] - me.position[1], goal[0] - me.position[0]);
-    if (now < this.avoidUntil) angle += this.avoidDirection * Math.PI * 0.58;
+    let dx = this.waypoint[0] - me.position[0], dy = this.waypoint[1] - me.position[1];
+    for (const player of this.players.values()) {
+      if (player.id === this.id || player.team !== this.team || !player.position) continue;
+      const d = distance(me.position, player.position);
+      if (d > 0.01 && d < 0.9 && goalDistance > 1) {
+        dx += (me.position[0] - player.position[0]) / d * 0.35;
+        dy += (me.position[1] - player.position[1]) / d * 0.35;
+      }
+    }
+    const angle = Math.atan2(dy, dx);
     const speed = objective.kind === 'capture' ? 3.0 : 2.8;
     const velocity = [Math.cos(angle) * speed, Math.sin(angle) * speed, 0];
     const next = [me.position[0] + velocity[0] * dt, me.position[1] + velocity[1] * dt, me.position[2] ?? 0.25];
@@ -172,7 +208,7 @@ class FlagshipBot {
     this.frame += 1;
     this.send(coordFrame(this.id, this.frame, next, velocity, aim));
     me.position = next;
-    if (combatPermission(state, objective, target) && now - this.lastShoot > 125) {
+    if (combatPermission(state, objective, target) && this.grid.lineClear(me.position, target.position) && now - this.lastShoot > 125) {
       this.send(shoot(this.id, 0, me.position, target.position)); this.lastShoot = now;
     }
     if (this.frame % 300 === 0) log({ event: 'snapshot', map: this.map, objective: objective.kind, distance: Number(goalDistance.toFixed(2)), stats: this.stats() });
