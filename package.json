@@ -1,0 +1,15 @@
+{
+  "name": "@baboviolent/flagship-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Objective-first external CTF bot for BaboViolent servers",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test",
+    "check": "node --check src/main.js && node --check src/protocol.js && node --check src/strategy.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
