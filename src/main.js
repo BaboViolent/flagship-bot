@@ -49,6 +49,8 @@ class FlagshipBot {
     this.waypoint = null;
     this.waypointUntil = 0;
     this.authoritativePosition = null;
+    this.pendingMovement = new Map();
+    this.snapshotPosition = null;
   }
 
   connect() {
@@ -117,8 +119,17 @@ class FlagshipBot {
       }
     } else if (type === NET.COORD_FRAME) {
       const update = parseCoord(payload), old = this.players.get(update.id) ?? { id: update.id };
-      this.players.set(update.id, { ...old, position: update.position });
-      if (update.id === this.id) this.authoritativePosition = update.position;
+      if (update.id === this.id) {
+        const predicted = this.pendingMovement.get(update.frameId);
+        const current = old.position ?? update.position;
+        const correction = predicted ? [update.position[0] - predicted[0], update.position[1] - predicted[1]] : [0, 0];
+        const position = [current[0] + correction[0], current[1] + correction[1], update.position[2]];
+        this.players.set(update.id, { ...old, position });
+        this.authoritativePosition = update.position;
+        for (const sentFrame of this.pendingMovement.keys()) if (sentFrame <= update.frameId) this.pendingMovement.delete(sentFrame);
+      } else {
+        this.players.set(update.id, { ...old, position: update.position });
+      }
     } else if (type === NET.FLAG_ENUM && payload.length >= 26) this.flags = parseFlagEnum(payload);
     else if (type === NET.DROP_FLAG && payload.length >= 13) {
       const update = parseFlagDrop(payload); this.flags[update.id] = { state: -1, position: update.position };
@@ -207,11 +218,16 @@ class FlagshipBot {
     const aim = target?.position ?? goal;
     this.frame += 1;
     this.send(coordFrame(this.id, this.frame, next, velocity, aim));
+    this.pendingMovement.set(this.frame, next);
     me.position = next;
-    if (combatPermission(state, objective, target) && this.grid.lineClear(me.position, target.position) && now - this.lastShoot > 125) {
+    if (combatPermission(state, objective, target) && this.grid.sightLineClear(me.position, target.position) && now - this.lastShoot > 125) {
       this.send(shoot(this.id, 0, me.position, target.position)); this.lastShoot = now;
     }
-    if (this.frame % 300 === 0) log({ event: 'snapshot', map: this.map, objective: objective.kind, distance: Number(goalDistance.toFixed(2)), stats: this.stats() });
+    if (this.frame % 300 === 0) {
+      const moved = this.snapshotPosition ? distance(me.position, this.snapshotPosition) : 0;
+      this.snapshotPosition = [...me.position];
+      log({ event: 'snapshot', map: this.map, objective: objective.kind, distance: Number(goalDistance.toFixed(2)), moved: Number(moved.toFixed(2)), position: me.position.map((value) => Number(value.toFixed(2))), stats: this.stats() });
+    }
   }
 }
 

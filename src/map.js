@@ -63,6 +63,16 @@ export class NavigationGrid {
     return true;
   }
 
+  sightLineClear(from, to) {
+    const length = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    const steps = Math.max(1, Math.ceil(length / 0.1));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      if (!this.passable(Math.floor(from[0] + (to[0] - from[0]) * t), Math.floor(from[1] + (to[1] - from[1]) * t))) return false;
+    }
+    return true;
+  }
+
   navigate(from, requestedGoal) {
     const goal = this.resolve(requestedGoal);
     if (this.lineClear(from, goal)) return goal;

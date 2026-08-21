@@ -101,7 +101,7 @@ export function parseSpawn(payload) {
 
 export function parseCoord(payload) {
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-  return { id: payload[0], position: [view.getInt16(8, true) / 100, view.getInt16(10, true) / 100, view.getInt16(12, true) / 100] };
+  return { id: payload[0], frameId: view.getInt32(4, true), position: [view.getInt16(8, true) / 100, view.getInt16(10, true) / 100, view.getInt16(12, true) / 100] };
 }
 
 export function parseFlagEnum(payload) {
